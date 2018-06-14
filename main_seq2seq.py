@@ -29,6 +29,7 @@ max_seq_len = 8
 word_vector_dict = {}
 word_set = {}
 word_set_path = './segment_result2.pair'
+file_len = 128000
 logging.basicConfig(level = logging.INFO,format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 def load_word_set(input):
@@ -159,9 +160,23 @@ def load_len(inputfile):
     return file_len
 
 def load_seqs(question_vec_seq,answer_vec_seq):
-    question_seqs = csv.reader(open(question_vec_seq,'r'))
-    answer_seqs = csv.reader(open(answer_vec_seq, 'r'))
-    return list(question_seqs),list(answer_seqs)
+    question_seqs = []
+    answer_seqs = []
+    with open(question_vec_seq,'r') as questions:
+        with open(answer_vec_seq,'r') as answers:
+            question_reader = csv.reader(questions)
+            answer_reader = csv.reader(answers)
+            for i,row in enumerate(question_reader):
+                if i < 100000:
+                    question_seqs.append(row)
+                else:
+                    break
+            for i,row in enumerate(answer_reader):
+                if i < 100000:
+                    answer_seqs.append(row)
+                else:
+                    break
+    return question_seqs,answer_seqs
 
 def init_seq(input_file,output_questionseq_file,output_answerseq_file):
     ###读取切好词的文本文件，加载全部词序列
@@ -169,13 +184,13 @@ def init_seq(input_file,output_questionseq_file,output_answerseq_file):
     if os.path.exists(output_questionseq_file) and os.path.exists(output_answerseq_file):
         question_seqs,answer_seqs = load_seqs(output_questionseq_file,output_answerseq_file)
     else:
-        file_len = load_len(input_file)
+        #file_len = load_len(input_file)
         word_vector_dict = load_vector('vectors.txt', 'word_vector_model2.txt')
         output_question_seq_file = csv.writer(open(output_questionseq_file, 'w', encoding='utf-8', newline=''))
         output_answer_seq_file = csv.writer(open(output_answerseq_file, 'w', encoding='utf-8', newline=''))
         logging.info('开始加载词序列......')
         i = 1
-        while True:
+        while i<=100000:
             print('正在加载词序列{0}/{1}......{2:.2f}%'.format(i+1,file_len,float(i/file_len)*100))
             question_seq = []
             answer_seq = []
@@ -241,10 +256,10 @@ class MainSeq2Seq(object):
         self.word_vec_dim = word_vec_dim
         self.input_file = input_file
         
-    def generate_training_data(self,startpoint = 0,size = 128):
-        load_word_set(self.input_file)
+    def generate_training_data(self,question_seqs,answer_seqs,startpoint = 0,size = 128):
+        #load_word_set(self.input_file)
         #word_vector_dict = load_vector('vectors.txt','word_vector_model2.txt')
-        question_seqs,answer_seqs = init_seq(self.input_file,'question_vector_seq.csv','answer_vector_seq.csv')
+        #question_seqs,answer_seqs = init_seq(self.input_file,'question_vector_seq.csv','answer_vector_seq.csv')
         xy_data = []
         y_data = []
         logging.info('正在生成训练数据......')
@@ -308,14 +323,20 @@ class MainSeq2Seq(object):
         return model
     
     def train(self):
-        for index in range(int(1/2*load_len(self.input_file)/128)):
-            print('index: {0}'.format(index))
-            trainXY,trainY = self.generate_training_data(startpoint=index)
-            model = self.model(feed_previous=False)
+        load_word_set(self.input_file)
+        # word_vector_dict = load_vector('vectors.txt','word_vector_model2.txt')
+        question_seqs, answer_seqs = init_seq(self.input_file, 'question_vector_seq.csv', 'answer_vector_seq.csv')
+        model = self.model(feed_previous=False)
+        for index in range(int(1/2*load_len(file_len)/128)):
+            logging.info('index: {0}'.format(index))
+            if os.path.exists('./model/model'):
+                model = model.load('./model/model')
+            trainXY,trainY = self.generate_training_data(question_seqs, answer_seqs,startpoint=index)
+            #model = self.model(feed_previous=False)
             model.fit(trainXY, trainY, n_epoch=100, snapshot_epoch=False, batch_size=1)
-        logging.info('正在保存模型......')
-        model.save('./model/model')
-        logging.info('模型保存完成 ! ! !')
+            logging.info('正在保存模型......')
+            model.save('./model/model')
+            logging.info('模型保存完成 ! ! !')
         return model
     
     def load(self):
